@@ -1,0 +1,10 @@
+
+    Simulation Log
+    ==============
+    Timestamp       : 2025-01-27 08:28:19
+    Time of Simulation (s) : 10.96
+    Stop Criteria   : A_n (100.164) > 1e2
+    Final Area      : 100.1644
+    Final Lambda    : 10.0000
+    ==============================
+    

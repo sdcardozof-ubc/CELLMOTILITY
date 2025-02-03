@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>
+<Xdmf Version="3.0" xmlns:xi="https://www.w3.org/2001/XInclude">
+  <Domain>
+    <Grid Name="mesh_at_t0.0" GridType="Uniform">
+      <Topology TopologyType="Edge_3" NumberOfElements="126" NodesPerElement="3">
+        <DataItem Dimensions="126 3" NumberType="Int" Format="HDF">outputH_.h5:/Mesh/mesh_at_t0.0/topology</DataItem>
+      </Topology>
+      <Geometry GeometryType="XY">
+        <DataItem Dimensions="252 2" Format="HDF">outputH_.h5:/Mesh/mesh_at_t0.0/geometry</DataItem>
+      </Geometry>
+    </Grid>
+    <Grid Name="f" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="f" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@Name='mesh_at_t0.0']/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="f" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="252 1" Format="HDF">outputH_.h5:/Function/f/0</DataItem>
+        </Attribute>
+      </Grid>
+      <Grid Name="f" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@Name='mesh_at_t0.001']/*[self::Topology or self::Geometry])" />
+        <Time Value="0.001" />
+        <Attribute Name="f" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="252 1" Format="HDF">outputH_.h5:/Function/f/0_001</DataItem>
+        </Attribute>
+      </Grid>
+      <Grid Name="f" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@Name='mesh_at_t0.05100000000000004']/*[self::Topology or self::Geometry])" />
+        <Time Value="0.051000000000000038" />
+        <Attribute Name="f" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="252 1" Format="HDF">outputH_.h5:/Function/f/0_051000000000000038</DataItem>
+        </Attribute>
+      </Grid>
+      <Grid Name="f" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@Name='mesh_at_t0.10100000000000008']/*[self::Topology or self::Geometry])" />
+        <Time Value="0.10100000000000008" />
+        <Attribute Name="f" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="252 1" Format="HDF">outputH_.h5:/Function/f/0_10100000000000008</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="mesh_at_t0.001" GridType="Uniform">
+      <Topology TopologyType="Edge_3" NumberOfElements="126" NodesPerElement="3">
+        <DataItem Dimensions="126 3" NumberType="Int" Format="HDF">outputH_.h5:/Mesh/mesh_at_t0.001/topology</DataItem>
+      </Topology>
+      <Geometry GeometryType="XY">
+        <DataItem Dimensions="252 2" Format="HDF">outputH_.h5:/Mesh/mesh_at_t0.001/geometry</DataItem>
+      </Geometry>
+    </Grid>
+    <Grid Name="mesh_at_t0.05100000000000004" GridType="Uniform">
+      <Topology TopologyType="Edge_3" NumberOfElements="126" NodesPerElement="3">
+        <DataItem Dimensions="126 3" NumberType="Int" Format="HDF">outputH_.h5:/Mesh/mesh_at_t0.05100000000000004/topology</DataItem>
+      </Topology>
+      <Geometry GeometryType="XY">
+        <DataItem Dimensions="252 2" Format="HDF">outputH_.h5:/Mesh/mesh_at_t0.05100000000000004/geometry</DataItem>
+      </Geometry>
+    </Grid>
+    <Grid Name="mesh_at_t0.10100000000000008" GridType="Uniform">
+      <Topology TopologyType="Edge_3" NumberOfElements="126" NodesPerElement="3">
+        <DataItem Dimensions="126 3" NumberType="Int" Format="HDF">outputH_.h5:/Mesh/mesh_at_t0.10100000000000008/topology</DataItem>
+      </Topology>
+      <Geometry GeometryType="XY">
+        <DataItem Dimensions="252 2" Format="HDF">outputH_.h5:/Mesh/mesh_at_t0.10100000000000008/geometry</DataItem>
+      </Geometry>
+    </Grid>
+  </Domain>
+</Xdmf>

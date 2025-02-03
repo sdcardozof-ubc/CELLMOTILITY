@@ -68,16 +68,16 @@ def area(dofs,coordinates):
 
     return area
 
-lambda_n = 10
-A_T = 1.2*np.pi
+
+A_T = np.pi
 
 def lambda_cont(A_init,A,A_n,lambda_n,beta1,beta2):
     """Compute the new lambda using forward eular"""
     dA = A-A_n
     #print((beta1, lambda_n, A, A_T))
     #print (dt*((beta1*lambda_n*(A-A_init+dA/dt))/(A_init*(lambda_n+beta1))-beta2*lambda_n))
-    return dt*((beta1*(A-A_T)))+lambda_n
-    #return dt*((beta1*lambda_n*(A-A_T+dA/dt))/(A_T*(lambda_n+beta1))-beta2*lambda_n)+lambda_n
+    #return dt*((beta1*(A-A_T+dA/dt)))+lambda_n
+    return dt*((beta1*lambda_n*(A-A_T+dA/dt))/(A_T*(lambda_n+beta1))-beta2*lambda_n)+lambda_n
 
 def write_simulation_log(save_path, stop_criteria, final_area, final_lambda, simulation_time):
     """
@@ -158,8 +158,6 @@ def run_simulation(beta1, beta2, save_path):
 
     mesh.topology.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
 
-    gmsh.finalize
-
     P1 = element("Lagrange", mesh.basix_cell(), 2, shape=(mesh.geometry.dim,), gdim=2)
     P2 = element("Lagrange", mesh.basix_cell(), 2, gdim=2)
 
@@ -222,10 +220,11 @@ def run_simulation(beta1, beta2, save_path):
     H_geom.interpolate(H_expr)
 
     k = dt
-    ks = 1
+    ks = 1e-5
     kb = 1e-2
-    lambda_n = 10
-    A_T = 1.2*np.pi
+    lambda_0 = beta1
+    lambda_n = beta1
+    A_T = np.pi
 
     lamb = Constant(mesh, PETSc.ScalarType(lambda_n))
 
@@ -343,7 +342,7 @@ def run_simulation(beta1, beta2, save_path):
         #Hh0.x.array[:] =  H_geom.x.array[:]
 
         A = area (dof_ordered,mesh.geometry.x[:,:2])
-        lang_mult = lambda_cont(A_init,A,A_n,lambda_n,beta1,beta2)
+        lang_mult = lambda_cont(A_init,A,A_n,lambda_n,lambda_0,beta2)
         l2_norm = np.linalg.norm(A)
 
         print(f"Step {int(t/dt)}: A = {l2_norm}")
@@ -403,7 +402,7 @@ def run_simulation(beta1, beta2, save_path):
     plt.ylabel(r'$A$', fontsize=20)
     plt.tick_params(axis='both', which='major', labelsize=14)  # Aumentar el tamaño de los ticks
     #plt.legend(fontsize=14)
-    plt.savefig(os.path.join(save_path, f'M1Area{beta1:.3f}.png'))  # Guarda la figura como archivo PNG
+    plt.savefig(os.path.join(save_path, f'M5Area{beta1:.3f}_{beta2:.3f}.png'))  # Guarda la figura como archivo PNG
     plt.close()  # Cierra la figura para no mostrarla
 
     # Segundo gráfico: X vs Y2 (t vs lambda)
@@ -413,7 +412,7 @@ def run_simulation(beta1, beta2, save_path):
     plt.ylabel(r'$\lambda$', fontsize=16)
     plt.tick_params(axis='both', which='major', labelsize=14)  # Aumentar el tamaño de los ticks
     #plt.legend(fontsize=14)
-    plt.savefig(os.path.join(save_path, f'M1lambda{beta1:.3f}.png'))  # Guarda la figura como archivo PNG
+    plt.savefig(os.path.join(save_path, f'M5lambda{beta1:.3f}_{beta2:.3f}.png'))  # Guarda la figura como archivo PNG
     plt.close()  # Cierra la figura para no 
 
     end = time.perf_counter()
@@ -432,48 +431,49 @@ def run_simulation(beta1, beta2, save_path):
 
 # Main loop over parameters
 # Generate powers of 10
-pow = 10 ** np.arange(0, 3, 0.5)  # [1, 10, 100]
+pow = 1e-2*(10 ** np.arange(0, 3, 0.5))  # [1, 10, 100]
+
+lamb_values = 1e-6*np.arange(1, 100, 10)
+# Create beta1 values by combining positive and negative ranges
+beta_values = np.concatenate((-pow[::-1], [0], pow))
 
 # Create beta1 values by combining positive and negative ranges
-beta1_values = np.concatenate((-pow[::-1], [0], pow))
 
-beta2_values = np.linspace(-9,10,10)
+output_Afile = "MeanCurvature2O/RESULTS/M5/AM5.dat"
 
-beta2 = 10;
-
-output_Afile = "MeanCurvature2O/RESULTS/M1/AM1.dat"
-
+# Ensure the directory exists before creating the file
 os.makedirs(os.path.dirname(output_Afile), exist_ok=True)
 
 with open(output_Afile, "w") as f:
-    f.write("beta1\tbeta2\tA\n")  # Add headers for the file
+    f.write("lambda\tbeta\tA\n")  # Add headers for the file
 
 # Simulation loop
-for beta1 in beta1_values:
-    save_path = fr"MeanCurvature2O/RESULTS/M1/resultsb1{beta1:.3f}"
-    A = run_simulation(beta1, beta2, save_path)
-    
-    # Write data to the file
-    with open(output_Afile, "a") as f:
-        f.write(f"{beta1:.3f}\t{beta2:.3f}\t{A:.6f}\n")  # Format data into columns
 
-# Load data from the file for plotting
-data = np.loadtxt(output_Afile, skiprows=1)  # Skip the header row
-beta1_values = data[:, 0]  # First column: beta1
-areas = data[:, 2]         # Third column: A (area)
+for lamb in lamb_values:
+        for beta in beta_values:
+            save_path = fr"MeanCurvature2O/RESULTS/M5/resultslamb{lamb:.3e}_b1{beta:.3e}"
+            A = run_simulation(lamb, beta, save_path)
+            # Write data to the file
+            with open(output_Afile, "a") as f:
+                f.write(f"{lamb:.3f}\t{beta:.3f}\t{A:.6f}\n")  # Format data into columns
 
-# Create the plot
-plt.figure(figsize=(8, 6))
-plt.scatter(beta1_values, areas, marker="o", linestyle="-", color="b", label="Area vs Beta1")
-plt.xlabel(r"$\beta_1$", fontsize=12)
-plt.ylabel("Area", fontsize=12)
-plt.title(r"Area vs $\beta_1$", fontsize=14)
-plt.legend()
-plt.grid()
-plt.tight_layout()
+# # Load data from the file for plotting
+# data = np.loadtxt(output_Afile, skiprows=1)  # Skip the header row
+# beta1_values = data[:, 0]  # First column: beta1
+# areas = data[:, 2]         # Third column: A (area)
 
-# Save the plot
-plot_file = "MeanCurvature2O/RESULTS/M1/beta1_vs_area.png"
-plt.savefig(plot_file)
+# # Create the plot
+# plt.figure(figsize=(8, 6))
+# plt.scatter(beta1_values, areas, marker="o", linestyle="-", color="b", label="Area vs Beta1")
+# plt.xlabel(r"$\beta_1$", fontsize=12)
+# plt.ylabel("Area", fontsize=12)
+# plt.title(r"Area vs $\beta_1$", fontsize=14)
+# plt.legend()
+# plt.grid()
+# plt.tight_layout()
 
-print(f"Plot saved as {plot_file}")
+# # Save the plot
+# plot_file = "MeanCurvature2O/RESULTS/M2/beta1_vs_area.png"
+# plt.savefig(plot_file)
+
+# print(f"Plot saved as {plot_file}")

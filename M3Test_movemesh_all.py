@@ -76,7 +76,7 @@ def lambda_cont(A_init,A,A_n,lambda_n,beta1,beta2):
     dA = A-A_n
     #print((beta1, lambda_n, A, A_T))
     #print (dt*((beta1*lambda_n*(A-A_init+dA/dt))/(A_init*(lambda_n+beta1))-beta2*lambda_n))
-    return dt*((beta1*(A-A_T)))+lambda_n
+    return dt*((beta1*(A-A_T+dA/dt))/(A_T*(lambda_n+beta1)))+lambda_n
     #return dt*((beta1*lambda_n*(A-A_T+dA/dt))/(A_T*(lambda_n+beta1))-beta2*lambda_n)+lambda_n
 
 def write_simulation_log(save_path, stop_criteria, final_area, final_lambda, simulation_time):
@@ -157,8 +157,6 @@ def run_simulation(beta1, beta2, save_path):
         xdmf.write_meshtags(cell_markers, mesh.geometry)
 
     mesh.topology.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
-
-    gmsh.finalize
 
     P1 = element("Lagrange", mesh.basix_cell(), 2, shape=(mesh.geometry.dim,), gdim=2)
     P2 = element("Lagrange", mesh.basix_cell(), 2, gdim=2)
@@ -403,7 +401,7 @@ def run_simulation(beta1, beta2, save_path):
     plt.ylabel(r'$A$', fontsize=20)
     plt.tick_params(axis='both', which='major', labelsize=14)  # Aumentar el tamaño de los ticks
     #plt.legend(fontsize=14)
-    plt.savefig(os.path.join(save_path, f'M1Area{beta1:.3f}.png'))  # Guarda la figura como archivo PNG
+    plt.savefig(os.path.join(save_path, f'M3Area{beta1:.3f}_{beta2:.3f}.png'))  # Guarda la figura como archivo PNG
     plt.close()  # Cierra la figura para no mostrarla
 
     # Segundo gráfico: X vs Y2 (t vs lambda)
@@ -413,7 +411,7 @@ def run_simulation(beta1, beta2, save_path):
     plt.ylabel(r'$\lambda$', fontsize=16)
     plt.tick_params(axis='both', which='major', labelsize=14)  # Aumentar el tamaño de los ticks
     #plt.legend(fontsize=14)
-    plt.savefig(os.path.join(save_path, f'M1lambda{beta1:.3f}.png'))  # Guarda la figura como archivo PNG
+    plt.savefig(os.path.join(save_path, f'M3lambda{beta1:.3f}_{beta2:.3f}.png'))  # Guarda la figura como archivo PNG
     plt.close()  # Cierra la figura para no 
 
     end = time.perf_counter()
@@ -437,25 +435,25 @@ pow = 10 ** np.arange(0, 3, 0.5)  # [1, 10, 100]
 # Create beta1 values by combining positive and negative ranges
 beta1_values = np.concatenate((-pow[::-1], [0], pow))
 
-beta2_values = np.linspace(-9,10,10)
+# Create beta1 values by combining positive and negative ranges
+beta2 = 10
 
-beta2 = 10;
+output_Afile = "MeanCurvature2O/RESULTS/M3/AM3.dat"
 
-output_Afile = "MeanCurvature2O/RESULTS/M1/AM1.dat"
-
+# Ensure the directory exists before creating the file
 os.makedirs(os.path.dirname(output_Afile), exist_ok=True)
 
 with open(output_Afile, "w") as f:
     f.write("beta1\tbeta2\tA\n")  # Add headers for the file
 
 # Simulation loop
+
 for beta1 in beta1_values:
-    save_path = fr"MeanCurvature2O/RESULTS/M1/resultsb1{beta1:.3f}"
-    A = run_simulation(beta1, beta2, save_path)
-    
-    # Write data to the file
-    with open(output_Afile, "a") as f:
-        f.write(f"{beta1:.3f}\t{beta2:.3f}\t{A:.6f}\n")  # Format data into columns
+        save_path = fr"MeanCurvature2O/RESULTS/M3/resultsb1{beta1:.3f}"
+        A = run_simulation(beta1, beta2, save_path)
+        # Write data to the file
+        with open(output_Afile, "a") as f:
+            f.write(f"{beta1:.3f}\t{beta2:.3f}\t{A:.6f}\n")  # Format data into columns
 
 # Load data from the file for plotting
 data = np.loadtxt(output_Afile, skiprows=1)  # Skip the header row
@@ -473,7 +471,7 @@ plt.grid()
 plt.tight_layout()
 
 # Save the plot
-plot_file = "MeanCurvature2O/RESULTS/M1/beta1_vs_area.png"
+plot_file = "MeanCurvature2O/RESULTS/M3/beta1_vs_area.png"
 plt.savefig(plot_file)
 
 print(f"Plot saved as {plot_file}")

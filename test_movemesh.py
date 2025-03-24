@@ -17,6 +17,9 @@ Run this script using Python 3.9 or later:
 import os
 import time
 import numpy as np
+import math as math
+
+os.environ["FFCX_JIT_TIMEOUT"] = "300"
 
 # MPI and PETSc imports
 from mpi4py import MPI  # type: ignore
@@ -33,14 +36,14 @@ import basix.ufl  # type: ignore
 import ufl  # type: ignore
 from basix.ufl import element, mixed_element  # type: ignore
 from dolfinx import mesh  # type: ignore
-from dolfinx.fem import (
+from dolfinx.fem import (  #type:ignore
     Function, functionspace, Expression, form, Constant  # type: ignore
 )
-from dolfinx.fem.petsc import (
+from dolfinx.fem.petsc import ( #type:ignore
     assemble_matrix, assemble_vector, create_vector  # type: ignore
 )
 from dolfinx.io import XDMFFile, gmshio  # type: ignore
-from ufl import dx, grad, inner, div, dot, pi, sin, atan2, exp, cos  # type: ignore
+from ufl import dx, grad, inner, div, dot, pi, sin, exp, cos  # type: ignore
 
 import os
 import time
@@ -59,37 +62,11 @@ except ImportError:
     print("This program requires gmsh to be installed")
     sys.exit(0)
 
-# FEniCSx and UFL imports
-import dolfinx  # type: ignore
-import basix.ufl  # type: ignore
-import ufl  # type: ignore
-from dolfinx.io import XDMFFile, gmshio  # type: ignore
-from dolfinx import mesh  # type: ignore
-from dolfinx.fem import (
-    Function, functionspace, Expression, form, Constant  # type: ignore
-)
-from dolfinx.fem.petsc import (
-    assemble_matrix, assemble_vector, create_vector  # type: ignore
-)
-from ufl import dx, grad, inner, div, dot, pi, sin, atan2, exp, cos  # type: ignore
-
 # Mesh and Geometry Parameters
-h = 1e-1
+h = 3e-1
 R = 1
 dt = 1e-3
 A_T = np.pi  # Target area
-
-def gmsh_circle(model: gmsh.model, name: str) -> gmsh.model:
-    """Create a Gmsh model of a circle."""
-    model.add(name)
-    model.setCurrent(name)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", h)
-    circle = model.occ.addDisk(0, 0, 0, R, R, tag=1)
-    model.occ.synchronize()
-    model.add_physical_group(dim=1, tags=[circle])
-    model.mesh.generate(dim=1)
-    model.mesh.setOrder(2)
-    return model
 
 def create_mesh(comm: MPI.Comm, model: gmsh.model, name: str, filename: str, mode: str):
     """Create a DOLFINx mesh from a Gmsh model and save to file."""
@@ -103,15 +80,23 @@ def create_mesh(comm: MPI.Comm, model: gmsh.model, name: str, filename: str, mod
         file.write_mesh(msh)
 
 def order_dofs(dof):
-    """Sort the DOFs in order."""
-    len_dof, _ = dof.shape
+    """Sort the dofs in order.
+    """
+
+    len,_= dof.shape
+    # print(type(dof))
     dof_ordered = np.empty_like(dof)
-    dof_ordered[0, :] = dof[0, :]
-    for i in range(len_dof):
-        for j in range(len_dof):
-            if dof[j, 0] == dof_ordered[i, 1]:
-                dof_ordered[i + 1, :] = dof[j, :]
+    dof_ordered[0,:] = dof[0,:]
+    
+    for i in range(len):
+        pos = 0
+        for j in range(len):
+            if dof[j,0] == dof_ordered[i,1]:
+                pos = j
                 break
+        if pos != 0:
+            dof_ordered[i+1,:] = dof[pos,:]     
+            
     return dof_ordered
 
 def area(dofs, coordinates):
@@ -126,10 +111,22 @@ def area(dofs, coordinates):
     )
     return abs(area) / 2
 
-def lambda_cont(A_init, A, A_n, lambda_n):
-    """Compute new lambda using forward Euler method."""
+def lambda_cont(A_init, A, A_n, lambda_n,lambda_0):
+    """Compute new lambda using the forward Euler method.
+    
+    Returns:
+        lambda_new: Updated lambda value.
+        term1: (beta1 * lambda_n * (A - A_T + dA / dt)) / (A_T * (lambda_n + beta1))
+        term2: beta2 * lambda_n
+    """
     dA = A - A_n
-    return dt * ((beta1 * lambda_n * (A - A_T + dA / dt)) - beta2 * lambda_n) + lambda_n
+    num = (beta1 * lambda_n * (A - A_T + dA / dt));
+    den = (A_T * (lambda_n + lambda_0));
+    term1 = (beta1 * lambda_n * (A - A_T + dA / dt))/ (A_T * (lambda_n + lambda_0));
+    term2 = beta2 * lambda_n
+    lambda_new = dt * (term1 - term2) + lambda_n
+    
+    return lambda_new, term1, term2, num, den
 
 def write_simulation_log(save_path, stop_criteria, final_area, final_lambda, simulation_time):
     """Writes a simulation log file with details about the run."""
@@ -175,7 +172,7 @@ if mesh_comm.rank == gmsh_model_rank:
 # Create mesh from GMSH model
 mesh, cell_markers, _ = gmshio.model_to_mesh(gmsh.model, mesh_comm, gmsh_model_rank, gdim=2)
 mesh.name = "initial_mesh"
-gmsh.finalize()
+
 
 # Save mesh
 with XDMFFile(MPI.COMM_WORLD, "circle.xdmf", "w") as xdmf:
@@ -259,12 +256,13 @@ kb = 1e-2  # Bending rigidity
 kp = 1.5e-1  # Curvature penalty coefficient
 
 # Lagrange multipliers
-beta1 = 10
-beta2 = 5
+beta1 = 2
+beta2 = 10
 lambda_n = 2  # Initial lambda
+lambda_0 = 2  # Initial lambda
 
 # Compute angular coordinate
-theta = ufl.atan2(x[1], x[0])
+
 
 # Define function for displacement field
 u = Function(Q)
@@ -274,10 +272,10 @@ t = 0.0
 mesh.name = f"mesh_at_t{t}"
 
 # Reduce runtime if running on CI server
-T = 3 * dt if "CI" in os.environ or "GITHUB_ACTIONS" in os.environ else 10000 * dt
+T = 3 * dt if "CI" in os.environ or "GITHUB_ACTIONS" in os.environ else 20000 * dt
 
 # Define save path
-save_path = fr"MeanCurvature2O/A4Proof/A0_{area_init:.3f}"
+save_path = fr"MeanCurvature2O/Results/A0_{area_init:.3f}"
 os.makedirs(save_path, exist_ok=True)
 
 # Setup output file for function u
@@ -302,6 +300,8 @@ A_n = A_init
 # Data tracking lists
 t_array, A_array, lamb_array, H_array = [], [], [], []
 
+term1_,term2_,num_, den_ = [], [], [],[]
+
 t_array.append(t)
 A_array.append(A_n)
 lamb_array.append(lambda_n)
@@ -314,21 +314,51 @@ filelamb.write(f"{t}\t{lambda_n}\n")
 # Define stopping criteria
 stop_criteria = "successful simulation"
 
-# Additional parameters
+# # Additional parameters for u expression
+# a0 = Constant(mesh, PETSc.ScalarType(1))
+# ohm = Constant(mesh, PETSc.ScalarType(0.2))
+# d0 = Constant(mesh, PETSc.ScalarType(0.1))
+
+# Update time-dependent parameters
+# a = a0 * (1 + 0.5 * np.cos(ohm * t))
+# d = d0 + 1.2*sin(ohm * t)
+
+
+# class u_exp:
+#     def __init__(self, t):
+#         self.t = t
+#         self.a0 = 1.0  # Initial amplitude
+#         self.sigma = 0.5  # Width of the Gaussian
+#         self.v = 0.1  # Speed of movement in theta
+
+#     def __call__(self, x):
+#         theta = np.arctan2(x[1], x[0])  # Compute theta
+#         theta_t = 0.3 + self.v * self.t  # Linear shift in theta over time
+#         a_t = self.a0 * np.exp(-((self.t - 0.5) ** 2) / (2 * self.sigma ** 2))  # Time-evolving Gaussian
+
+#         return a_t * np.exp(-((theta - theta_t) ** 2) / (2 * self.sigma ** 2))
+
+
+# Update time-dependent parameters
 a0 = 1
 ohm = 0.5
 d0 = 0.2
+
+# Compute angular coordinate
+theta = ufl.atan2(x[1], x[0])
+
+a = a0
+d = d0
+u_exp = Expression(1 + a * exp(-2 * (theta - 2) ** 2) * sin(1.2 * theta + d), Q.element.interpolation_points())
+u.interpolate(u_exp)
 
 # Time-stepping loop
 while t < T:
     t += dt
     inc += 1
 
-    # Update time-dependent parameters
-    a = a0 * (1 + 0.5 * cos(ohm * t))
-    d = d0 + ohm * t
-    u_exp = Expression(1 + a * exp(-2 * (theta - 2) ** 2) * sin(1.2 * theta + d), Q.element.interpolation_points())
-    u.interpolate(u_exp)
+    # ut = u_exp(t)
+    # u.interpolate(ut)
 
     # Update Lagrange multiplier
     lamb = Constant(mesh, PETSc.ScalarType(lambda_n))
@@ -367,15 +397,19 @@ while t < T:
     
     # Compute new area and lambda multiplier
     A = area(dof_ordered, mesh.geometry.x[:, :2])
-    lang_mult = lambda_cont(A_init, A, A_n, lambda_n)
+    lang_mult, term1, term2,num,den = lambda_cont(A_init, A, A_n, lambda_n,lambda_0)
     l2_norm = np.linalg.norm(A)
-    print(f"Step {int(t / dt)}: A = {l2_norm}")
+    #print(f"Step {int(t / dt)}: A = {l2_norm}")
 
     # Update variables
     lambda_n = lang_mult
     A_n = A
     
     # Store results
+    num_.append(num)
+    den_.append(den)
+    term1_.append(term1)
+    term2_.append(term2)
     t_array.append(t)
     A_array.append(A_n)
     lamb_array.append(lambda_n)
@@ -402,6 +436,12 @@ while t < T:
         file1.write_function(u, t, mesh_xpath=f"/Xdmf/Domain/Grid[@Name='{mesh.name}']")
         z += 1
 
+        print("=" * 40)
+        print(f"{'Step':<20} {int(t / dt)}, Iterations: NA")
+        print(f"{'Area:':<20} {A:.6f}")
+        print(f"{'Lagrange Multiplier:':<20} {lang_mult:.6f}")
+        print("=" * 40)
+
 # Close output files
 file1.close()
 fileA.close()
@@ -415,29 +455,101 @@ plt.rc('font', family='serif')
 # Plot Area vs Time
 plt.figure()
 plt.plot(t_array, A_array, linewidth=2.5, label='Area')
-plt.axhline(y=A_T, color='red', linestyle='--', linewidth=2, label='$A_T$')  # Target area line
+plt.axhline(y=A_T, color='red', linestyle='--', linewidth=2, label=r'$A_T$')  # Target area line
 plt.axhline(y=0, color='black', linestyle='-', linewidth=1)  # x-axis
 plt.axvline(x=0, color='black', linestyle='-', linewidth=1)  # y-axis
-plt.xlabel('$t$', fontsize=20)
-plt.ylabel('$A$', fontsize=20)
+plt.xlabel(r'$t$', fontsize=20)
+plt.ylabel(r'$A$', fontsize=20)
 plt.tick_params(axis='both', which='major', labelsize=14)
 plt.savefig(os.path.join(save_path, f'Area_{A_T:.3f}.png'))
 plt.close()
 
 # Plot Lambda vs Time
 plt.figure()
-plt.plot(t_array, lamb_array, linewidth=2.5, label='$\lambda$', color='orange')
-plt.xlabel('$t$', fontsize=16)
-plt.ylabel('$\lambda$', fontsize=16)
+plt.plot(t_array, lamb_array, linewidth=2.5, label=r'$\lambda$', color='orange')
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$\lambda$', fontsize=16)
 plt.tick_params(axis='both', which='major', labelsize=14)
 plt.savefig(os.path.join(save_path, f'lambda_{A_T:.3f}.png'))
+plt.close()
+
+# Plot term1 vs Time
+plt.figure()
+plt.plot(t_array[1:], term1_, linewidth=2.5, label=r'$\lambda$', color='orange')
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$term_1$', fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.savefig(os.path.join(save_path, f'term1_{A_T:.3f}.png'))
+plt.close()
+
+# Plot term2 vs Time
+plt.figure()
+plt.plot(t_array[1:], term2_, linewidth=2.5, label=r'$\lambda$', color='orange')
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$term_2$', fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.savefig(os.path.join(save_path, f'term2_{A_T:.3f}.png'))
+plt.close()
+
+# Plot num vs Time
+plt.figure()
+plt.plot(t_array[1:], num_, linewidth=2.5, label=r'$\lambda$', color='orange')
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$term_0$', fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.savefig(os.path.join(save_path, f'num_{A_T:.3f}.png'))
+plt.close()
+
+# Plot den vs Time
+plt.figure()
+plt.plot(t_array[1:], den_, linewidth=2.5, label=r'$\lambda$', color='orange')
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$term_0$', fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.savefig(os.path.join(save_path, f'den_{A_T:.3f}.png'))
+plt.close()
+
+# Plot term1 vs Time (semilogy)
+plt.figure()
+plt.semilogy(t_array[1:], np.abs(term1_), linewidth=2.5, label=r'$\lambda$', color='orange')
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$term_1$', fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.savefig(os.path.join(save_path, f'term1y_{A_T:.3f}.png'))
+plt.close()
+
+# Plot term2 vs Time (semilogy)
+plt.figure()
+plt.semilogy(t_array[1:], np.abs(term2_), linewidth=2.5, label=r'$\lambda$', color='orange')
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$term_2$', fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.savefig(os.path.join(save_path, f'term2y_{A_T:.3f}.png'))
+plt.close()
+
+# Plot num vs Time (semilogy)
+plt.figure()
+plt.semilogy(t_array[1:], np.abs(num_), linewidth=2.5, label=r'$\lambda$', color='orange')
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$term_0$', fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.savefig(os.path.join(save_path, f'numy_{A_T:.3f}.png'))
+plt.close()
+
+# Plot den vs Time (semilogy)
+plt.figure()
+plt.semilogy(t_array[1:], np.abs(den_), linewidth=2.5, label=r'$\lambda$', color='orange')
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$term_0$', fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.savefig(os.path.join(save_path, f'deny_{A_T:.3f}.png'))
 plt.close()
 
 # Plot Maximum H vs Time
 plt.figure()
 plt.plot(t_array, H_array, linewidth=2.5, label='$H$', color='orange')
-plt.xlabel('$t$', fontsize=16)
-plt.ylabel('$H$', fontsize=16)
+plt.xlabel(r'$t$', fontsize=16)
+plt.ylabel(r'$H$', fontsize=16)
 plt.tick_params(axis='both', which='major', labelsize=14)
 plt.savefig(os.path.join(save_path, f'H_max_{A_T:.3f}.png'))
 plt.close()
